@@ -10,7 +10,7 @@ from typing import Dict, List, Tuple
 
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from stock_agent import (
     analyze_stock,
@@ -82,6 +82,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/unwatch 0700\n"
         "/list\n"
         "/scan\n\n"
+        "群聊也支持: @机器人 002648\n"
         "代码支持: 600519 / 000001 / 0700 / AAPL（会自动补交易所后缀）\n"
         "说明: 仅供参考，不构成投资建议。"
     )
@@ -226,6 +227,43 @@ async def scan_watch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text(f"扫描失败: {exc}")
 
 
+async def mention_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.message
+    if not message or not message.text:
+        return
+    if message.text.startswith("/"):
+        return
+
+    bot_username = (context.bot.username or "").lower()
+    text = message.text.strip()
+    lower_text = text.lower()
+
+    if bot_username and f"@{bot_username}" not in lower_text:
+        return
+
+    parts = text.replace(",", " ").split()
+    symbol_raw = ""
+    for part in parts:
+        candidate = part.strip()
+        if candidate.startswith("@"):
+            continue
+        symbol_raw = candidate
+        break
+
+    if not symbol_raw:
+        await message.reply_text("用法: @机器人 股票代码，例如 @qyabb_bot 002648")
+        return
+
+    try:
+        symbol = normalize_symbol(symbol_raw)
+        await message.reply_text(f"正在分析 {symbol} ...")
+        result = await _analyze_cached(symbol)
+        await message.reply_text(format_report(result))
+    except Exception as exc:
+        logger.exception("Mention query failed")
+        await message.reply_text(f"分析失败: {exc}")
+
+
 def main() -> None:
     load_dotenv()
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
@@ -241,6 +279,7 @@ def main() -> None:
     app.add_handler(CommandHandler("unwatch", unwatch))
     app.add_handler(CommandHandler("list", list_watch))
     app.add_handler(CommandHandler("scan", scan_watch))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), mention_query))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
