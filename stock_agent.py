@@ -8,6 +8,8 @@ from typing import List, Optional, Tuple
 import pandas as pd
 import yfinance as yf
 
+from sector_playbook import match_sector_playbook
+
 
 @dataclass
 class AnalysisResult:
@@ -37,6 +39,10 @@ class AnalysisResult:
     sell_score: int
     sector_top_picks: List[str]
     final_comment: str
+    sector_playbook_name: Optional[str]
+    sector_catalyst: Optional[str]
+    sector_affected_products: Optional[str]
+    sector_logic: Optional[str]
 
 
 def _compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
@@ -212,6 +218,7 @@ def analyze_stock(symbol: str) -> AnalysisResult:
     sector_name, sector_strength_pct, sector_main_fund_flow, sector_fund_signal = (
         _fetch_sector_metrics(symbol)
     )
+    playbook = match_sector_playbook(sector_name)
 
     df = yf.Ticker(symbol).history(period="1y", interval="1d", auto_adjust=True)
     if df.empty or "Close" not in df:
@@ -347,6 +354,10 @@ def analyze_stock(symbol: str) -> AnalysisResult:
         sell_score=sell_score,
         sector_top_picks=sector_top_picks,
         final_comment=final_comment,
+        sector_playbook_name=playbook.name if playbook else None,
+        sector_catalyst=playbook.catalyst if playbook else None,
+        sector_affected_products=playbook.affected_products if playbook else None,
+        sector_logic=playbook.logic if playbook else None,
     )
 
 
@@ -366,6 +377,14 @@ def format_report(result: AnalysisResult) -> str:
         if result.sector_top_picks
         else "- 暂无可用同板块候选"
     )
+    catalyst_block = ""
+    if result.sector_playbook_name:
+        catalyst_block = (
+            f"板块打法: {result.sector_playbook_name}\n"
+            f"市场刺激: {result.sector_catalyst}\n"
+            f"直接受益产品/业务: {result.sector_affected_products}\n"
+            f"传导逻辑: {result.sector_logic}\n\n"
+        )
     return (
         f"【{result.symbol} 分析】\n"
         "仅供参考，不构成投资建议。\n\n"
@@ -382,6 +401,7 @@ def format_report(result: AnalysisResult) -> str:
         f"所属板块: {result.sector_name}\n"
         f"板块强度: {sector_strength_text}\n"
         f"板块主力资金: {sector_flow_text} ({result.sector_fund_signal})\n\n"
+        f"{catalyst_block}"
         "同板块更高评分个股:\n"
         f"{top_picks_text}\n\n"
         f"摘要: {result.summary}\n"
